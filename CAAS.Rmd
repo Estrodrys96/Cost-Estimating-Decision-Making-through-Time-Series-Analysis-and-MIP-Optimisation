@@ -1,0 +1,2016 @@
+---
+title: "CAAS - Car Purchase Budgeting"
+author: "Esteban Rodriguez"
+date: "2025-05-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library(forecast)
+library(ggplot2)
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(plotly)
+library(urca)
+library(tseries)
+library(magrittr)
+library(fpp2)
+library(fanplot)
+library(urca)
+library(ggfortify)
+library(TSstudio)
+library(timetk)
+library(plotly)
+library(lubridate)
+
+
+
+```
+
+# Environment
+```{r}
+
+# set work directory
+
+setwd("C:/Users/estro/Desktop/CAAS")
+
+
+# Load all_cars data and perform minor formatting
+
+all_cars <- read.csv("all_car_adverts_modified.csv") 
+
+all_cars <- all_cars[all_cars$miles != "", ]
+
+all_cars <- all_cars[!grepl("[A-Za-z]", all_cars$year), ]
+```
+
+
+# Plot a depreciation curve for all 8 makes
+```{r}
+# Filter data by our vehicles of interest
+all_cars_makes <- all_cars %>% filter(all_cars[[3]] %in% c("3 Series", "A4", "Insignia", "Mazda6", "Mondeo", "Passat", "S60", "Superb"))
+
+
+# Concat make, model, and variant into "car" field, for easier identification
+all_cars_makes$car <- paste(all_cars_makes$make, all_cars_makes$model,  sep = "_")
+
+# delete unnecesary fields
+all_cars_makes_formatted <- all_cars_makes[, -c(2, 3, 4)]
+
+# Get the number of columns
+n <- ncol(all_cars_makes_formatted)
+
+# Reorder: first column, then last column, then the rest (excluding 1 and n)
+all_cars_makes_formatted <- all_cars_makes_formatted[, c(1, n, 2:(n - 1))]
+
+all_cars_makes_formatted <- all_cars_makes_formatted %>%
+  filter_all(all_vars(!is.na(.) & . != ""))
+
+pl2 <- ggplot(all_cars_makes_formatted, aes(x = miles, y = car_price)) +
+  ggtitle('Car depreciation by Brand') +
+  geom_smooth(aes(color = car), method = "loess") +
+  ylim(0, 50000)
+print(pl2)
+```
+
+
+```{r}
+# Filter data by our vehicles of interest
+all_cars_filtered <- all_cars %>% filter(all_cars[[3]] %in% c("3 Series", "A4", "Insignia", "Mazda6", "Mondeo", "Passat", "S60", "Superb"))
+
+
+# Concat make, model, and variant into "car" field, for easier identification
+all_cars_filtered$car <- paste(all_cars_filtered$make, all_cars_filtered$model, all_cars_filtered$variant,  sep = "_")
+
+# delete unnecesary fields
+all_cars_formatted <- all_cars_filtered[, -c(2, 3, 4)]
+
+# Get the number of columns
+n <- ncol(all_cars_formatted)
+
+# Reorder: first column, then last column, then the rest (excluding 1 and n)
+all_cars_formatted <- all_cars_formatted[, c(1, n, 2:(n - 1))]
+
+# Remove all rows where an NA or empty cell are found
+all_cars_formatted <- all_cars_formatted %>%
+  filter_all(all_vars(!is.na(.) & . != ""))
+
+# Create a ranked table, from top to bottom, of least depreciating cars
+rates_table <- all_cars_formatted %>%
+  arrange(car, miles) %>%               # Sort by car, then miles
+  group_by(car) %>%
+  mutate(
+    delta_price = lead(car_price) - car_price,  # Difference in price to next mile
+    delta_miles = lead(miles) - miles,          # Difference in miles to next point
+    rate = delta_price / delta_miles             # Rate of price change per mile
+  ) %>%
+  filter(!is.na(rate) & delta_miles != 0) %>%   # Remove NA and zero-distance
+  summarise(
+    avg_rate = mean(rate)                        # Average rate for each car
+  ) %>%
+  arrange(desc(avg_rate)) %>%                           # Sort by rate ascending
+  mutate(rank = row_number())                      # Add rank column
+
+print(rates_table)
+# rates_table[, 2] <- format(rates_table[, 2], scientific = FALSE)
+
+```
+
+# We will take the top 3 cars for analysis: Audi A4, Vauxhall Insignia, and Volkswagen Passat 
+
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+
+# AUDI A4 TFSI - ANALYSIS
+
+```{r}
+# Filter only the top car for depreciation
+all_cars_audi <- all_cars_formatted[all_cars_formatted$car =="Audi_A4_TFSI",]
+
+# Delete sellers with low rating
+# all_cars_audi <- all_cars_audi[all_cars_audi$car_seller_rating >= 3, ]
+# 
+# all_cars_audi <- all_cars_audi[all_cars_audi$car_price <= 30000, ]
+# 
+# all_cars_audi <- all_cars_audi[all_cars_audi$miles <= 100000, ]
+
+
+hist(all_cars_audi$car_price, 
+     main = "Frequency Distribution of a major retailer car prices, 2007 to 2022, \n Audi A4 TFSI", 
+     xlab = "Sale price", 
+     col = "skyblue", 
+     border = "white")
+
+plot(density(all_cars_audi$car_price, na.rm = TRUE), 
+     main = "Density Distribution of a major retailer car prices, 2007 to 2022, \n Audi A4 TFSI", 
+     xlab = "Sale price", 
+     col = "blue", 
+     lwd = 2)
+
+hist(all_cars_audi$miles, 
+     main = "Frequency Distribution of a major retailer car mileages, 2007 to 2022, \n Audi A4 TFSI", 
+     xlab = "mileage at sale", 
+     col = "skyblue", 
+     border = "white")
+
+plot(density(all_cars_audi$miles, na.rm = TRUE), 
+     main = "Density Distribution of a major retailer car mileages, 2007 to 2022, \n Audi A4 TFSI", 
+     xlab = "mileage at sale", 
+     col = "blue", 
+     lwd = 2)
+
+```
+
+# Extract Mode, s.d., and skew parameters of SALE PRICES
+```{r}
+
+# Define skewness function
+get_skewness <- function(x) {
+  x <- x[!is.na(x)]
+  m <- mean(x)
+  s <- sd(x)
+  n <- length(x)
+  sum((x - m)^3) / ((n - 1) * s^3)
+}
+
+# Ensure relevant columns are numeric
+all_cars_audi$car_price <- as.numeric(all_cars_audi$car_price)
+all_cars_audi$miles <- as.numeric(all_cars_audi$miles)
+
+# Get unique years
+years <- sort(unique(all_cars_audi$year))
+
+# Initialise empty list to store results
+results <- list()
+
+# Loop over years
+for (yr in years) {
+  subset_all_cars_audi <- all_cars_audi[all_cars_audi$year == yr, ]
+  
+  result_row <- data.frame(
+    year = yr,
+    
+    car_price_median = median(subset_all_cars_audi$car_price, na.rm = TRUE),
+    car_price_sd = sd(subset_all_cars_audi$car_price, na.rm = TRUE),
+    car_price_skew = get_skewness(subset_all_cars_audi$car_price),
+    
+    miles_median = median(subset_all_cars_audi$miles, na.rm = TRUE),
+    miles_sd = sd(subset_all_cars_audi$miles, na.rm = TRUE),
+    miles_skew = get_skewness(subset_all_cars_audi$miles)
+  )
+  
+  results[[length(results) + 1]] <- result_row
+}
+
+# Combine all rows into a new data frame
+all_cars_audi_sub <- do.call(rbind, results)
+
+# View the results
+print(all_cars_audi_sub)
+
+# Define the suffixes
+fractions <- c(0.00, 0.25, 0.50, 0.75)
+
+# Repeat each row 4 times
+all_cars_audi_sub_2 <- all_cars_audi_sub[rep(1:nrow(all_cars_audi_sub), each = 4), ]
+
+# Reset row names
+rownames(all_cars_audi_sub_2) <- NULL
+
+# Get original years
+original_years <- all_cars_audi_sub$year
+
+# Create the new year values
+new_years <- as.numeric(rep(original_years, each = 4)) + rep(fractions, times = length(original_years))
+
+# Assign to the data frame
+all_cars_audi_sub_2$year <- new_years
+
+# View results
+print(all_cars_audi_sub_2)
+
+
+
+```
+# Prepare for ARIMA
+
+```{r}
+# Convert to year and fraction
+year_int <- floor(all_cars_audi_sub_2$year)
+fraction <- all_cars_audi_sub_2$year - year_int
+
+# Round and convert fraction to character format with 2 decimal places
+fraction_rounded <- sprintf("%.2f", round(fraction, 2))
+
+# Lookup table
+month_lookup <- c(
+  `0.00` = "02",  # Feb
+  `0.25` = "05",  # May
+  `0.50` = "08",  # Aug
+  `0.75` = "11"   # Nov
+)
+
+# Get the month using lookup
+month <- month_lookup[fraction_rounded]
+
+# Create the full date string
+date_strings <- paste(year_int, month, "01", sep = "-")
+
+# Assign to new data frame and convert
+all_cars_audi_sub_3 <- all_cars_audi_sub_2
+all_cars_audi_sub_3$year_date <- as.Date(date_strings, format = "%Y-%m-%d")
+
+names(all_cars_audi_sub_3)[names(all_cars_audi_sub_3) == "year_date"] <- "date"
+
+# Preview result
+head(all_cars_audi_sub_3)
+
+
+```
+
+
+# Audi A4 TFSI median time series
+```{r}
+# Extract median data from sub_3
+audi_median <- data.frame(
+  date = all_cars_audi_sub_3$date,
+  car_price_median = all_cars_audi_sub_3$car_price_median
+)
+
+# ENABLE THIS TO REMOVE THE QUARTERLY DATA
+# audi_median <- audi_median[format(audi_median$date, "%m-%d") == "02-01", ]
+
+# Rename the price field
+names(audi_median)[names(audi_median) == "car_price_median"] <- "median"
+
+# Convert object into time series object
+audi_ts <- ts(audi_median$median, start = c(2007, 1), frequency = 4)
+
+```
+
+
+## We can now have a look at the median price series
+```{r}
+autoplot(audi_ts) +
+  ggtitle("Audi A4 TFSI median sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025") +
+  xlab("Year of registration") +
+  ylab("Median sale price") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  theme(panel.grid.major = element_line(color = "gray", size = 0.5, linetype = 2))  
+  
+
+
+
+# Create an interactive plot using ts_plot()
+plot_2 <- 
+ts_plot(audi_ts,
+        slider = FALSE,
+        title = "Audi A4 TFSI median sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025",
+        Xtitle = "Median sale price",
+        Ytitle = "% skew",
+        Xgrid = TRUE,    
+        Ygrid = TRUE) 
+
+# Display the interactive plot
+plot_2
+
+#https://otexts.com/fpp2/stationarity.html
+
+```
+
+
+# SARIMA(0,1,0)(0,1,1)[4] is the best suited model, so we use it
+```{r}
+audi_ts %>% diff(lag=4) %>% ggtsdisplay()
+
+auto.arima(audi_ts)
+
+#Do not use diff2_uncertainty_ts for this, use the undifferenced one
+mode_sarima <- audi_ts %>%
+forecast::Arima(order=c(0,1,0), seasonal = c(0,1,1))
+
+mode_forecast <- mode_sarima %>% 
+forecast::forecast(h = 16)
+
+mode_forecast$mean
+
+```
+
+# Check Residual data
+```{r}
+checkresiduals(mode_sarima)
+```
+
+
+# Produce a LOESS of fitted-residual correlation
+```{r}
+ggplot(cbind(Fitted = fitted(mode_sarima),
+             Residuals = residuals(mode_sarima)) %>%
+         as.data.frame(),
+       aes(x = Fitted, y = Residuals)) +
+  geom_point() +
+  geom_smooth(method = "loess", color = "red", se = FALSE)
+```
+
+
+# Get the data table of historical and forecasted CPI (for later use), and produce a plot
+```{r}
+
+# Assuming uncertainty and uncertainty_forecast$mean are ts or zoo objects
+combined_data <- data.frame(Date = c(time(audi_ts), time(mode_forecast$mean)),
+  Value = c(as.vector(audi_ts), as.vector(mode_forecast$mean)),
+  Series = rep(c("Mode", "Forecast"), c(length(audi_ts), length(mode_forecast$mean))))
+
+# Plot the combined time series
+ggplot(combined_data, aes(x = Date, y = Value, color = Series)) + geom_line(size = 0.9) +
+  labs(title = "Mode vs Forecast", x = "Year", y = "Sale price") + 
+  scale_color_manual(values = c("Mode" = "black", "Forecast" = "cyan"))
+  theme_minimal()
+
+
+
+```
+
+
+# ####################################################################
+
+# Audi A4 TFSI SD time series
+```{r}
+# Extract median data from sub_3
+audi_sd <- data.frame(
+  date = all_cars_audi_sub_3$date,
+  car_price_sd = all_cars_audi_sub_3$car_price_sd
+)
+
+# ENABLE THIS TO REMOVE THE QUARTERLY DATA
+# audi_median <- audi_median[format(audi_median$date, "%m-%d") == "02-01", ]
+
+# Rename the price field
+names(audi_sd)[names(audi_sd) == "car_price_sd"] <- "sd"
+
+# Convert object into time series object
+audi_ts_sd <- ts(audi_sd$sd, start = c(2007, 1), frequency = 4)
+
+```
+
+
+## We can now have a look at the sd price series
+```{r}
+autoplot(audi_ts_sd) +
+  ggtitle("Audi A4 TFSI sd sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025") +
+  xlab("Year of registration") +
+  ylab("sd sale price") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  theme(panel.grid.major = element_line(color = "gray", size = 0.5, linetype = 2))  
+  
+
+
+
+# Create an interactive plot using ts_plot()
+plot_2_sd <- 
+ts_plot(audi_ts_sd,
+        slider = FALSE,
+        title = "Audi A4 TFSI sd sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025",
+        Xtitle = "sd sale price",
+        Ytitle = "% sd",
+        Xgrid = TRUE,    
+        Ygrid = TRUE) 
+
+# Display the interactive plot
+plot_2_sd
+
+#https://otexts.com/fpp2/stationarity.html
+
+```
+
+
+# Find the ARIMA order automatically
+```{r}
+audi_ts_sd %>% diff(lag=4) %>% ggtsdisplay()
+
+auto.arima(audi_ts_sd)
+
+sd_sarima <- audi_ts_sd %>%
+forecast::Arima(order=c(0,1,0), seasonal = c(0,0,1))
+
+sd_forecast <- sd_sarima %>% 
+forecast::forecast(h = 16)
+
+sd_forecast$mean
+
+```
+# We find ARIMA(0,1,0)(0,0,1)[4] to be suggested, so we use it.
+# Check Residual data
+```{r}
+checkresiduals(sd_sarima)
+```
+
+
+# Produce a LOESS of fitted-residual correlation
+```{r}
+ggplot(cbind(Fitted = fitted(sd_sarima),
+             Residuals = residuals(sd_sarima)) %>%
+         as.data.frame(),
+       aes(x = Fitted, y = Residuals)) +
+  geom_point() +
+  geom_smooth(method = "loess", color = "red", se = FALSE)
+```
+
+
+# Get the data table of historical and forecasted SD (for later use), and produce a plot
+```{r}
+
+# Assuming uncertainty and uncertainty_forecast$mean are ts or zoo objects
+combined_data_sd <- data.frame(Date = c(time(audi_ts_sd), time(sd_forecast$mean)),
+  Value = c(as.vector(audi_ts_sd), as.vector(sd_forecast$mean)),
+  Series = rep(c("sd", "Forecast"), c(length(audi_ts_sd), length(sd_forecast$mean))))
+
+# Plot the combined time series
+ggplot(combined_data_sd, aes(x = Date, y = Value, color = Series)) + geom_line(size = 0.9) +
+  labs(title = "SD vs Forecast", x = "Year", y = "Sale price") + 
+  scale_color_manual(values = c("SD" = "black", "Forecast" = "cyan"))
+  theme_minimal()
+
+
+
+```
+
+
+
+# ####################################################################
+
+# Audi A4 TFSI Skew time series
+```{r}
+# Extract median data from sub_3
+audi_skew <- data.frame(
+  date = all_cars_audi_sub_3$date,
+  car_price_skew = all_cars_audi_sub_3$car_price_skew
+)
+
+# ENABLE THIS TO REMOVE THE QUARTERLY DATA
+# audi_median <- audi_median[format(audi_median$date, "%m-%d") == "02-01", ]
+
+# Rename the price field
+names(audi_skew)[names(audi_skew) == "car_price_skew"] <- "skew"
+
+# Convert object into time series object
+audi_ts_skew <- ts(audi_skew$skew, start = c(2007, 1), frequency = 4)
+
+```
+
+
+## We can now have a look at the skew price series
+```{r}
+autoplot(audi_ts_skew) +
+  ggtitle("Audi A4 TFSI skew sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025") +
+  xlab("Year of registration") +
+  ylab("skew sale price") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  theme(panel.grid.major = element_line(color = "gray", size = 0.5, linetype = 2))  
+  
+
+
+
+# Create an interactive plot using ts_plot()
+plot_2_skew <- 
+ts_plot(audi_ts_skew,
+        slider = FALSE,
+        title = "Audi A4 TFSI skew sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025",
+        Xtitle = "skew sale price",
+        Ytitle = "% skew",
+        Xgrid = TRUE,    
+        Ygrid = TRUE) 
+
+# Display the interactive plot
+plot_2_skew
+
+#https://otexts.com/fpp2/stationarity.html
+
+```
+
+# We now find the ARIMA order automatically
+```{r}
+audi_ts_skew %>% ggtsdisplay()
+
+auto.arima(audi_ts_skew)
+
+skew_sarima <- audi_ts_skew %>%
+forecast::Arima(order=c(1,0,0), seasonal = c(2,0,1))
+
+skew_forecast <- skew_sarima %>% 
+forecast::forecast(h = 16)
+
+skew_forecast$mean
+
+```
+# We find that ARIMA(1,0,0)(2,0,1)[4] is the best suited model, so we use it
+
+# Check Residual data
+```{r}
+checkresiduals(skew_sarima)
+```
+
+
+# Produce a LOESS of fitted-residual correlation
+```{r}
+ggplot(cbind(Fitted = fitted(skew_sarima),
+             Residuals = residuals(skew_sarima)) %>%
+         as.data.frame(),
+       aes(x = Fitted, y = Residuals)) +
+  geom_point() +
+  geom_smooth(method = "loess", color = "red", se = FALSE)
+```
+
+
+# Get the data table of historical and forecasted skew (for later use), and produce a plot
+```{r}
+
+# Assuming uncertainty and uncertainty_forecast$mean are ts or zoo objects
+combined_data_skew <- data.frame(Date = c(time(audi_ts_skew), time(skew_forecast$mean)),
+  Value = c(as.vector(audi_ts_skew), as.vector(skew_forecast$mean)),
+  Series = rep(c("skew", "Forecast"), c(length(audi_ts_skew), length(skew_forecast$mean))))
+
+# Plot the combined time series
+ggplot(combined_data_skew, aes(x = Date, y = Value, color = Series)) + geom_line(size = 0.9) +
+  labs(title = "Skew vs Forecast", x = "Year", y = "Sale price") + 
+  scale_color_manual(values = c("Skew" = "black", "Forecast" = "cyan"))
+  theme_minimal()
+
+
+
+```
+
+
+# Convert to .csv for downloading
+
+```{r}
+# Convert to csv for Excel formatting
+
+write.table(combined_data, "C:/Users/estro/Desktop/CAAS/audi_mode_forecast.csv", sep = ",", row.names = FALSE)
+
+write.table(combined_data_sd, "C:/Users/estro/Desktop/CAAS/audi_sd_forecast.csv", sep = ",", row.names = FALSE)
+
+write.table(combined_data_skew, "C:/Users/estro/Desktop/CAAS/audi_skew_forecast.csv", sep = ",", row.names = FALSE)
+
+```
+
+# Now we go to Excel and combine the three .csv files we exported, and import them through 'audi0'.
+# Note that, values beyond 2023 are forecasts, as the original data set only contains entries for this type of car up to 2022.
+```{r}
+# Load audi combined parameter data
+
+audi0 <- read.csv("audi_parameters_combined.csv") %>% 
+    mutate(skew = ifelse(skew < -1, -0.99,
+                ifelse(skew > 1, 0.99, skew))) %>%
+  mutate(uncertainty = ifelse(is.na(uncertainty), 0, uncertainty)) %>%
+  drop_na() 
+
+```
+
+
+
+# To plot our final, ARIMA forecast values
+```{r}
+
+# Select year of interest
+y0 <- 2007
+k <- nrow(audi0)
+
+# Percentiles to plot
+p <- c(0.01, seq(0.05, 0.95, 0.05), 0.99)
+
+# Generate fan values from split-normal
+cpival <- matrix(NA, nrow = length(p), ncol = k)
+for (i in 1:k) {
+  cpival[, i] <- qsplitnorm(
+    p,
+    mode = audi0$mode[i],
+    sd = audi0$uncertainty[i],
+    skew = audi0$skew[i]
+  )
+}
+
+# Set plot margins
+par(mar = c(6, 6, 6, 2))  # bottom, left, top, right
+
+# Generate x-axis range
+years_seq <- seq(y0, by = 0.25, length.out = ncol(cpival))
+cutoff_index <- which(years_seq >= 2023.00)[1]
+
+# Split the matrix
+cpival_before <- cpival[, 1:(cutoff_index - 1)]
+cpival_after  <- cpival[, cutoff_index:ncol(cpival)]
+
+# Initialise the plot
+plot(1, type = "n", xlim = c(y0, y0 + k/4), ylim = range(cpival, na.rm = TRUE),
+     xaxt = "n", yaxt = "n", ylab = "", xlab = "")
+
+# Light gray background
+rect(y0 - 0.25, par("usr")[3], y0 + k/4, par("usr")[4], border = NA, col = "white")
+
+# Add grid lines (light gray for all quarters)
+abline(v = seq(y0, y0 + k/4, 0.25), col = "lightgray", lty = 1, lwd = 0.5)
+
+# Thicker grid lines for full years
+abline(v = seq(y0, y0 + k/4, 1), col = "black", lty = 1, lwd = 0.8)
+
+# Horizontal grid lines
+abline(h = seq(0, 50000, by = 5000), col = "gray", lty = 1, lwd = 0.5)
+abline(h = seq(0, 50000, by = 1000), col = "gray80", lty = 2, lwd = 0.3)
+
+# Fan plot before
+fan(data = cpival_before, data.type = "values", probs = p,
+    start = y0, frequency = 4,
+    fan.col = colorRampPalette(c("green4", "azure2")),
+    ln = NULL, rlab = NULL)
+
+# Fan plot from after
+fan(data = cpival_after, data.type = "values", probs = p,
+    start = years_seq[cutoff_index], frequency = 4,
+    fan.col = colorRampPalette(c("tomato", "azure2")),
+    ln = NULL, rlab = NULL)
+
+# Y-axis
+axis(2, las = 2, tcl = 0.5)
+
+# X-axis: label every full year, rotated
+year_ticks <- seq(y0, y0 + k/4, 1)
+axis(1, at = year_ticks, labels = format(year_ticks, nsmall = 2), las = 2, cex.axis = 0.8)
+
+# Titles
+title(main = "Sale Price Distribution by Registration Date, for \n a major retailer, plus SARIMA forecast, 2023-26 \n Car: Audi A4 TFSI", line = 2.7, font.main = 2, cex.main = 1.2)
+title(xlab = "Registration Date", line = 3.8, cex.lab = 1)
+title(ylab = "Sale Price (£)", line = 4.5, cex.lab = 1)  # Shifted left using line=
+
+# Calculate years since 2025, for extra axis
+years_since_2025 <- 2025 - year_ticks
+
+# Add the top axis with custom labels
+axis(3, at = year_ticks, labels = years_since_2025, tcl = 0.5, cex.axis = 0.8)
+
+# Add axis label above top axis
+mtext("Age (as of 2025)", side = 3, line = 2.5, cex = 0.8, adj = 1)
+
+legend_x <- y0 + k/4 - 21    # adjust position on x-axis (near right)
+legend_y <- max(cpival, na.rm = TRUE)  # near top of y-axis
+
+legend(
+  x = legend_x, y = legend_y,
+  legend = c("Historical", "Forecast"),
+  fill = c("green4", "tomato"),
+  border = "black",
+  bty = "n",          # no box around legend
+  cex = 0.9,          # text size
+  inset = 0.02        # a little inset from the edge
+)
+
+
+```
+
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+
+# Vauxhall Insignia SRi - ANALYSIS
+
+```{r}
+# Filter only the top car for depreciation
+all_cars_vauxhall <- all_cars_formatted[all_cars_formatted$car =="Vauxhall_Insignia_SRi",]
+
+# Delete sellers with low rating
+# all_cars_audi <- all_cars_audi[all_cars_audi$car_seller_rating >= 3, ]
+# 
+# all_cars_audi <- all_cars_audi[all_cars_audi$car_price <= 30000, ]
+# 
+# all_cars_audi <- all_cars_audi[all_cars_audi$miles <= 100000, ]
+
+
+hist(all_cars_vauxhall$car_price, 
+     main = "Frequency Distribution of a major retailer car prices, 2007 to 2022, \n Vauxhall Insignia SRi", 
+     xlab = "Sale price", 
+     col = "skyblue", 
+     border = "white")
+
+plot(density(all_cars_vauxhall$car_price, na.rm = TRUE), 
+     main = "Density Distribution of a major retailer car prices, 2007 to 2022, \n Vauxhall Insignia SRi", 
+     xlab = "Sale price", 
+     col = "blue", 
+     lwd = 2)
+
+hist(all_cars_vauxhall$miles, 
+     main = "Frequency Distribution of a major retailer car mileages, 2007 to 2022, \n Vauxhall Insignia SRi", 
+     xlab = "mileage at sale", 
+     col = "skyblue", 
+     border = "white")
+
+plot(density(all_cars_vauxhall$miles, na.rm = TRUE), 
+     main = "Density Distribution of a major retailer car mileages, 2007 to 2022, \n Vauxhall Insignia SRi", 
+     xlab = "mileage at sale", 
+     col = "blue", 
+     lwd = 2)
+
+```
+
+# Extract Mode, s.d., and skew parameters of SALE PRICES
+```{r}
+
+# Define skewness function
+get_skewness_vauxhall <- function(x) {
+  x <- x[!is.na(x)]
+  m <- mean(x)
+  s <- sd(x)
+  n <- length(x)
+  sum((x - m)^3) / ((n - 1) * s^3)
+}
+
+# Ensure relevant columns are numeric
+all_cars_vauxhall$car_price <- as.numeric(all_cars_vauxhall$car_price)
+all_cars_vauxhall$miles <- as.numeric(all_cars_vauxhall$miles)
+
+# Get unique years
+years_vauxhall <- sort(unique(all_cars_vauxhall$year))
+
+# Initialise empty list to store results
+results_vauxhall <- list()
+
+# Loop over years
+for (yr in years_vauxhall) {
+  subset_all_cars_vauxhall <- all_cars_vauxhall[all_cars_vauxhall$year == yr, ]
+  
+  result_row <- data.frame(
+    year = yr,
+    
+    car_price_median = median(subset_all_cars_vauxhall$car_price, na.rm = TRUE),
+    car_price_sd = sd(subset_all_cars_vauxhall$car_price, na.rm = TRUE),
+    car_price_skew = get_skewness(subset_all_cars_vauxhall$car_price),
+    
+    miles_median = median(subset_all_cars_vauxhall$miles, na.rm = TRUE),
+    miles_sd = sd(subset_all_cars_vauxhall$miles, na.rm = TRUE),
+    miles_skew = get_skewness(subset_all_cars_vauxhall$miles)
+  )
+  
+  results_vauxhall[[length(results_vauxhall) + 1]] <- result_row
+}
+
+# Combine all rows into a new data frame
+all_cars_vauxhall_sub <- do.call(rbind, results_vauxhall)
+
+# View the result
+print(all_cars_vauxhall_sub)
+
+# Define the suffixes
+fractions_vauxhall <- c(0.00, 0.25, 0.50, 0.75)
+
+# Repeat each row 4 times
+all_cars_vauxhall_sub_2 <- all_cars_vauxhall_sub[rep(1:nrow(all_cars_vauxhall_sub), each = 4), ]
+
+# Reset row names
+rownames(all_cars_vauxhall_sub_2) <- NULL
+
+# Get original years
+original_years_vauxhall <- all_cars_vauxhall_sub$year
+
+# Create the new year values
+new_years_vauxhall <- as.numeric(rep(original_years_vauxhall, each = 4)) + rep(fractions_vauxhall, times = length(original_years_vauxhall))
+
+# Assign to the data frame
+all_cars_vauxhall_sub_2$year <- new_years_vauxhall
+
+# View result
+print(all_cars_vauxhall_sub_2)
+
+
+
+```
+# Prepare for ARIMA
+
+```{r}
+# Convert to year and fraction
+year_int_vauxhall <- floor(all_cars_vauxhall_sub_2$year)
+fraction_vauxhall <- all_cars_vauxhall_sub_2$year - year_int_vauxhall
+
+# Round and convert fraction to character format with 2 decimal places
+fraction_rounded_vauxhall <- sprintf("%.2f", round(fraction_vauxhall, 2))
+
+# Lookup table
+month_lookup_vauxhall <- c(
+  `0.00` = "02",  # Feb
+  `0.25` = "05",  # May
+  `0.50` = "08",  # Aug
+  `0.75` = "11"   # Nov
+)
+
+# Get the month using lookup
+month_vauxhall <- month_lookup_vauxhall[fraction_rounded_vauxhall]
+
+# Create the full date string
+date_strings_vauxhall <- paste(year_int_vauxhall, month_vauxhall, "01", sep = "-")
+
+# Assign to new data frame and convert
+all_cars_vauxhall_sub_3 <- all_cars_vauxhall_sub_2
+all_cars_vauxhall_sub_3$year_date <- as.Date(date_strings_vauxhall, format = "%Y-%m-%d")
+
+names(all_cars_vauxhall_sub_3)[names(all_cars_vauxhall_sub_3) == "year_date"] <- "date"
+
+# Preview result
+head(all_cars_vauxhall_sub_3)
+
+
+```
+
+
+# Vauxhall median time series
+```{r}
+# Extract median data from sub_3
+vauxhall_median <- data.frame(
+  date = all_cars_vauxhall_sub_3$date,
+  car_price_median = all_cars_vauxhall_sub_3$car_price_median
+)
+
+# ENABLE THIS TO REMOVE THE QUARTERLY DATA
+# vauxhall_median <- vauxhall_median[format(vauxhall_median$date, "%m-%d") == "02-01", ]
+
+# Rename the price field
+names(vauxhall_median)[names(vauxhall_median) == "car_price_median"] <- "median"
+
+# Convert object into time series object
+vauxhall_ts <- ts(vauxhall_median$median, start = c(2009, 1), frequency = 4)
+
+```
+
+
+## We can now have a look at the median price series
+```{r}
+autoplot(vauxhall_ts) +
+  ggtitle("Vauxhall Insignia SRi median sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025") +
+  xlab("Year of registration") +
+  ylab("Median sale price") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  theme(panel.grid.major = element_line(color = "gray", size = 0.5, linetype = 2))  
+  
+
+
+
+# Create an interactive plot using ts_plot()
+plot_2_vauxhall <- 
+ts_plot(vauxhall_ts,
+        slider = FALSE,
+        title = "Vauxhall Insignia SRi median sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025",
+        Xtitle = "Median sale price",
+        Ytitle = "% skew",
+        Xgrid = TRUE,    
+        Ygrid = TRUE) 
+
+# Display the interactive plot
+plot_2_vauxhall
+
+#https://otexts.com/fpp2/stationarity.html
+
+```
+
+
+# SARIMA(0,1,0)(0,1,1)[4] is the best suited model, so we use it
+```{r}
+vauxhall_ts %>% diff(lag=4) %>% ggtsdisplay()
+
+auto.arima(vauxhall_ts)
+
+#Do not use diff2_uncertainty_ts for this, use the undifferenced one
+mode_sarima_vauxhall <- vauxhall_ts %>%
+forecast::Arima(order=c(0,1,0), seasonal = c(0,1,1))
+
+mode_forecast_vauxhall <- mode_sarima_vauxhall %>% 
+forecast::forecast(h = 28)
+
+mode_forecast_vauxhall$mean
+
+```
+
+# Check Residual data
+```{r}
+checkresiduals(mode_sarima_vauxhall)
+```
+
+
+# Produce a LOESS of fitted-residual correlation
+```{r}
+ggplot(cbind(Fitted = fitted(mode_sarima_vauxhall),
+             Residuals = residuals(mode_sarima_vauxhall)) %>%
+         as.data.frame(),
+       aes(x = Fitted, y = Residuals)) +
+  geom_point() +
+  geom_smooth(method = "loess", color = "red", se = FALSE)
+```
+
+
+# Get the data table of historical and forecasted CPI (for later use), and produce a plot
+```{r}
+
+# Assuming uncertainty and uncertainty_forecast$mean are ts or zoo objects
+combined_data_vauxhall <- data.frame(Date = c(time(vauxhall_ts), time(mode_forecast_vauxhall$mean)),
+  Value = c(as.vector(vauxhall_ts), as.vector(mode_forecast_vauxhall$mean)),
+  Series = rep(c("Mode", "Forecast"), c(length(vauxhall_ts), length(mode_forecast_vauxhall$mean))))
+
+# Plot the combined time series
+ggplot(combined_data_vauxhall, aes(x = Date, y = Value, color = Series)) + geom_line(size = 0.9) +
+  labs(title = "Mode vs Forecast", x = "Year", y = "Sale price") + 
+  scale_color_manual(values = c("Mode" = "black", "Forecast" = "cyan"))
+  theme_minimal()
+
+
+
+```
+
+
+# ####################################################################
+
+# vauxhall SD time series
+```{r}
+# Extract median data from sub_3
+vauxhall_sd <- data.frame(
+  date = all_cars_vauxhall_sub_3$date,
+  car_price_sd = all_cars_vauxhall_sub_3$car_price_sd
+)
+
+# ENABLE THIS TO REMOVE THE QUARTERLY DATA
+# vauxhall_sd_median <- vauxhall_sd_median[format(vauxhall_sd_median$date, "%m-%d") == "02-01", ]
+
+# Rename the price field
+names(vauxhall_sd)[names(vauxhall_sd) == "car_price_sd"] <- "sd"
+
+# Convert object into time series object
+vauxhall_ts_sd <- ts(vauxhall_sd$sd, start = c(2009, 1), frequency = 4)
+
+```
+
+
+## We can now have a look at the sd price series
+```{r}
+autoplot(vauxhall_ts_sd) +
+  ggtitle("Vauxhall Insignia SRi sd sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025") +
+  xlab("Year of registration") +
+  ylab("sd sale price") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  theme(panel.grid.major = element_line(color = "gray", size = 0.5, linetype = 2))  
+  
+
+
+
+# Create an interactive plot using ts_plot()
+plot_2_sd_vauxhall <- 
+ts_plot(vauxhall_ts_sd,
+        slider = FALSE,
+        title = "Vauxhall Insignia SRi sd sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025",
+        Xtitle = "sd sale price",
+        Ytitle = "% sd",
+        Xgrid = TRUE,    
+        Ygrid = TRUE) 
+
+# Display the interactive plot
+plot_2_sd_vauxhall
+
+#https://otexts.com/fpp2/stationarity.html
+
+```
+
+
+# Find the ARIMA order automatically
+```{r}
+vauxhall_ts_sd %>% diff(lag=4) %>% ggtsdisplay()
+
+auto.arima(vauxhall_ts_sd)
+
+sd_sarima_vauxhall <- vauxhall_ts_sd %>%
+forecast::Arima(order=c(1,0,0))
+
+sd_forecast_vauxhall <- sd_sarima_vauxhall %>% 
+forecast::forecast(h = 28)
+
+sd_forecast_vauxhall$mean
+
+```
+# We find ARIMA(1,0,0) to be suggested, so we use it.
+# Check Residual data
+```{r}
+checkresiduals(sd_sarima_vauxhall)
+```
+
+
+# Produce a LOESS of fitted-residual correlation
+```{r}
+ggplot(cbind(Fitted = fitted(sd_sarima_vauxhall),
+             Residuals = residuals(sd_sarima_vauxhall)) %>%
+         as.data.frame(),
+       aes(x = Fitted, y = Residuals)) +
+  geom_point() +
+  geom_smooth(method = "loess", color = "red", se = FALSE)
+```
+
+
+# Get the data table of historical and forecasted SD (for later use), and produce a plot
+```{r}
+
+# Assuming uncertainty and uncertainty_forecast$mean are ts or zoo objects
+combined_data_sd_vauxhall <- data.frame(Date = c(time(vauxhall_ts_sd), time(sd_forecast_vauxhall$mean)),
+  Value = c(as.vector(vauxhall_ts_sd), as.vector(sd_forecast_vauxhall$mean)),
+  Series = rep(c("sd", "Forecast"), c(length(vauxhall_ts_sd), length(sd_forecast_vauxhall$mean))))
+
+# Plot the combined time series
+ggplot(combined_data_sd_vauxhall, aes(x = Date, y = Value, color = Series)) + geom_line(size = 0.9) +
+  labs(title = "SD vs Forecast", x = "Year", y = "Sale price") + 
+  scale_color_manual(values = c("SD" = "black", "Forecast" = "cyan"))
+  theme_minimal()
+
+
+
+```
+
+
+
+# ####################################################################
+
+# vauxhall Skew time series
+```{r}
+# Extract median data from sub_3
+vauxhall_skew <- data.frame(
+  date = all_cars_vauxhall_sub_3$date,
+  car_price_skew = all_cars_vauxhall_sub_3$car_price_skew
+)
+
+# ENABLE THIS TO REMOVE THE QUARTERLY DATA
+# vauxhall_median <- vauxhall_median[format(vauxhall_median$date, "%m-%d") == "02-01", ]
+
+# Rename the price field
+names(vauxhall_skew)[names(vauxhall_skew) == "car_price_skew"] <- "skew"
+
+# Convert object into time series object
+vauxhall_ts_skew <- ts(vauxhall_skew$skew, start = c(2009, 1), frequency = 4)
+
+```
+
+
+## We can now have a look at the skew price series
+```{r}
+autoplot(vauxhall_ts_skew) +
+  ggtitle("Vauxhall Insignia SRi skew sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025") +
+  xlab("Year of registration") +
+  ylab("skew sale price") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  theme(panel.grid.major = element_line(color = "gray", size = 0.5, linetype = 2))  
+  
+
+
+
+# Create an interactive plot using ts_plot()
+plot_2_skew_vauxhall <- 
+ts_plot(vauxhall_ts_skew,
+        slider = FALSE,
+        title = "Vauxhall Insignia SRi skew sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025",
+        Xtitle = "skew sale price",
+        Ytitle = "% skew",
+        Xgrid = TRUE,    
+        Ygrid = TRUE) 
+
+# Display the interactive plot
+plot_2_skew_vauxhall
+
+#https://otexts.com/fpp2/stationarity.html
+
+```
+
+# We now find the ARIMA order automatically
+```{r}
+vauxhall_ts_skew %>% ggtsdisplay()
+
+auto.arima(vauxhall_ts_skew)
+
+skew_sarima_vauxhall <- vauxhall_ts_skew %>%
+forecast::Arima(order=c(0,1,0))
+
+skew_forecast_vauxhall <- skew_sarima_vauxhall %>% 
+forecast::forecast(h = 28)
+
+skew_forecast_vauxhall$mean
+
+```
+# We find that ARIMA(0,1,0) is the best suited model, so we use it
+
+# Check Residual data
+```{r}
+checkresiduals(skew_sarima_vauxhall)
+```
+
+
+# Produce a LOESS of fitted-residual correlation
+```{r}
+ggplot(cbind(Fitted = fitted(skew_sarima_vauxhall),
+             Residuals = residuals(skew_sarima_vauxhall)) %>%
+         as.data.frame(),
+       aes(x = Fitted, y = Residuals)) +
+  geom_point() +
+  geom_smooth(method = "loess", color = "red", se = FALSE)
+```
+
+
+# Get the data table of historical and forecasted skew (for later use), and produce a plot
+```{r}
+
+# Assuming uncertainty and uncertainty_forecast$mean are ts or zoo objects
+combined_data_skew_vauxhall <- data.frame(Date = c(time(vauxhall_ts_skew), time(skew_forecast_vauxhall$mean)),
+  Value = c(as.vector(vauxhall_ts_skew), as.vector(skew_forecast_vauxhall$mean)),
+  Series = rep(c("skew", "Forecast"), c(length(vauxhall_ts_skew), length(skew_forecast_vauxhall$mean))))
+
+# Plot the combined time series
+ggplot(combined_data_skew_vauxhall, aes(x = Date, y = Value, color = Series)) + geom_line(size = 0.9) + labs(title = "Skew vs Forecast", x = "Year", y = "Sale price") + 
+  scale_color_manual(values = c("Skew" = "black", "Forecast" = "cyan"))
+  theme_minimal()
+
+
+
+```
+
+
+# Convert to .csv for downloading
+
+```{r}
+# Convert to csv for Excel formatting
+
+write.table(combined_data_vauxhall, "C:/Users/estro/Desktop/CAAS/vauxhall_mode_forecast.csv", sep = ",", row.names = FALSE)
+
+write.table(combined_data_sd_vauxhall, "C:/Users/estro/Desktop/CAAS/vauxhall_sd_forecast.csv", sep = ",", row.names = FALSE)
+
+write.table(combined_data_skew_vauxhall, "C:/Users/estro/Desktop/CAAS/vauxhall_skew_forecast.csv", sep = ",", row.names = FALSE)
+
+```
+
+# Now we go to Excel and combine the three .csv files we exported, and import them through 'vauxhall0'.
+# Note that, values beyond 2023 are forecasts, as the original data set only contains entries for this type of car up to 2020.
+```{r}
+# Load vauxhall combined parameter data
+
+vauxhall0 <- read.csv("vauxhall_parameters_combined.csv") %>% 
+  mutate(skew = ifelse(skew < -1, -0.99,
+                ifelse(skew > 1, 0.99, skew))) %>%
+  mutate(uncertainty = ifelse(is.na(uncertainty), 0, uncertainty)) %>%
+  drop_na()
+
+
+```
+
+
+
+# To plot our final, ARIMA forecast values
+```{r}
+
+# Select year of interest
+y0_vauxhall <- 2009
+k_vauxhall <- nrow(vauxhall0)
+
+# Percentiles to plot
+p_vauxhall <- c(0.01, seq(0.05, 0.95, 0.05), 0.99)
+
+# Generate fan values from split-normal
+cpival_vauxhall <- matrix(NA, nrow = length(p_vauxhall), ncol = k_vauxhall)
+for (i in 1:k_vauxhall) {
+  cpival_vauxhall[, i] <- qsplitnorm(
+    p_vauxhall,
+    mode = vauxhall0$mode[i],
+    sd = vauxhall0$uncertainty[i],
+    skew = vauxhall0$skew[i]
+  )
+}
+
+# Set plot margins
+par(mar = c(6, 6, 6, 2))  # bottom, left, top, right
+
+# Generate x-axis range
+years_seq_vauxhall <- seq(y0_vauxhall, by = 0.25, length.out = ncol(cpival_vauxhall))
+cutoff_index_vauxhall <- which(years_seq_vauxhall >= 2020.00)[1]
+
+# Split the matrix
+cpival_before_vauxhall <- cpival_vauxhall[, 1:(cutoff_index_vauxhall - 1)]
+cpival_after_vauxhall  <- cpival_vauxhall[, cutoff_index_vauxhall:ncol(cpival_vauxhall)]
+
+# initialise the plot
+plot(1, type = "n", xlim = c(y0_vauxhall, y0_vauxhall + k_vauxhall/4), ylim = range(cpival_vauxhall, na.rm = TRUE),
+     xaxt = "n", yaxt = "n", ylab = "", xlab = "")
+
+# Light gray background
+rect(y0_vauxhall - 0.25, par("usr")[3], y0_vauxhall + k_vauxhall/4, par("usr")[4], border = NA, col = "white")
+
+# Add grid lines (light gray for all quarters)
+abline(v = seq(y0_vauxhall, y0_vauxhall + k_vauxhall/4, 0.25), col = "lightgray", lty = 1, lwd = 0.5)
+
+# Thicker grid lines for full years
+abline(v = seq(y0_vauxhall, y0_vauxhall + k_vauxhall/4, 1), col = "black", lty = 1, lwd = 0.8)
+
+# Horizontal grid lines
+abline(h = seq(0, 50000, by = 5000), col = "gray", lty = 1, lwd = 0.5)
+abline(h = seq(0, 50000, by = 1000), col = "gray80", lty = 2, lwd = 0.3)
+
+# Fan plot before 
+fan(data = cpival_before_vauxhall, data.type = "values", probs = p_vauxhall,
+    start = y0_vauxhall, frequency = 4,
+    fan.col = colorRampPalette(c("green4", "azure2")),
+    ln = NULL, rlab = NULL)
+
+# Fan plot from after
+fan(data = cpival_after_vauxhall, data.type = "values", probs = p_vauxhall,
+    start = years_seq_vauxhall[cutoff_index_vauxhall], frequency = 4,
+    fan.col = colorRampPalette(c("tomato", "azure2")),
+    ln = NULL, rlab = NULL)
+
+# Y-axis
+axis(2, las = 2, tcl = 0.5)
+
+# X-axis: label every full year, rotated
+year_ticks_vauxhall <- seq(y0_vauxhall, y0_vauxhall + k_vauxhall/4, 1)
+axis(1, at = year_ticks_vauxhall, labels = format(year_ticks_vauxhall, nsmall = 2), las = 2, cex.axis = 0.8)
+
+# Titles
+title(main = "Sale Price Distribution by Registration Date, for \n a major retailer, plus SARIMA forecast, 2020-26 \n Car: Vauxhall Insignia SRi", line = 2.7, font.main = 2, cex.main = 1.2)
+title(xlab = "Registration Date", line = 3.8, cex.lab = 1)
+title(ylab = "Sale Price (£)", line = 4.5, cex.lab = 1)  # Shifted left using line=
+
+# Calculate "years since 2025"
+years_since_2025_vauxhall <- 2025 - year_ticks_vauxhall
+
+# Add the top axis (side = 3) with custom labels
+axis(3, at = year_ticks_vauxhall, labels = years_since_2025_vauxhall, tcl = 0.5, cex.axis = 0.8)
+
+# Add axis label above top axis
+mtext("Age (as of 2025)", side = 3, line = 2.5, cex = 0.8, adj = 1)
+
+legend_x_vauxhall <- y0_vauxhall + k_vauxhall/4 - 19    # adjust position on x-axis (near right)
+legend_y_vauxhall <- max(cpival_vauxhall, na.rm = TRUE)  # near top of y-axis
+
+legend(
+  x = legend_x_vauxhall, y = legend_y_vauxhall,
+  legend = c("Historical", "Forecast"),
+  fill = c("green4", "tomato"),
+  border = "black",
+  bty = "n",          # no box around legend
+  cex = 0.9,          # text size
+  inset = 0.02        # a little inset from the edge
+)
+
+
+```
+
+
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+# #############################################################################
+
+# Volkswagen Passat R-Line - ANALYSIS
+
+```{r}
+# Filter only the top car for depreciation
+all_cars_volkswagen <- all_cars_formatted[all_cars_formatted$car =="Volkswagen_Passat_R-Line",]
+
+# Delete sellers with low rating
+# all_cars_Volkswagen <- all_cars_Volkswagen[all_cars_Volkswagen$car_seller_rating >= 3, ]
+# 
+# all_cars_Volkswagen <- all_cars_Volkswagen[all_cars_Volkswagen$car_price <= 30000, ]
+# 
+# all_cars_Volkswagen <- all_cars_Volkswagen[all_cars_Volkswagen$miles <= 100000, ]
+
+
+hist(all_cars_volkswagen$car_price, 
+     main = "Frequency Distribution of a major retailer car prices, 2007 to 2022, \n Volkswagen Passat R-Line",
+     xlab = "Sale price", 
+     col = "skyblue", 
+     border = "white")
+
+plot(density(all_cars_volkswagen$car_price, na.rm = TRUE), 
+     main = "Density Distribution of a major retailer car prices, 2007 to 2022, \n Volkswagen Passat R-Line", 
+     xlab = "Sale price", 
+     col = "blue", 
+     lwd = 2)
+
+hist(all_cars_volkswagen$miles, 
+     main = "Frequency Distribution of a major retailer car mileages, 2007 to 2022, \n Volkswagen Passat R-Line", 
+     xlab = "mileage at sale", 
+     col = "skyblue", 
+     border = "white")
+
+plot(density(all_cars_volkswagen$miles, na.rm = TRUE), 
+     main = "Density Distribution of a major retailer car mileages, 2007 to 2022, \n Volkswagen Passat R-Line", 
+     xlab = "mileage at sale", 
+     col = "blue", 
+     lwd = 2)
+
+```
+
+# Extract Mode, s.d., and skew parameters of SALE PRICES
+```{r}
+
+# Define skewness function
+get_skewness_volkswagen <- function(x) {
+  x <- x[!is.na(x)]
+  m <- mean(x)
+  s <- sd(x)
+  n <- length(x)
+  sum((x - m)^3) / ((n - 1) * s^3)
+}
+
+# Ensure relevant columns are numeric
+all_cars_volkswagen$car_price <- as.numeric(all_cars_volkswagen$car_price)
+all_cars_volkswagen$miles <- as.numeric(all_cars_volkswagen$miles)
+
+# Get unique years
+years_volkswagen <- sort(unique(all_cars_volkswagen$year))
+
+# Initialise empty list to store results
+results_volkswagen <- list()
+
+# Loop over years
+for (yr in years_volkswagen) {
+  subset_all_cars_volkswagen <- all_cars_volkswagen[all_cars_volkswagen$year == yr, ]
+  
+  result_row <- data.frame(
+    year = yr,
+    
+    car_price_median = median(subset_all_cars_volkswagen$car_price, na.rm = TRUE),
+    car_price_sd = sd(subset_all_cars_volkswagen$car_price, na.rm = TRUE),
+    car_price_skew = get_skewness(subset_all_cars_volkswagen$car_price),
+    
+    miles_median = median(subset_all_cars_volkswagen$miles, na.rm = TRUE),
+    miles_sd = sd(subset_all_cars_volkswagen$miles, na.rm = TRUE),
+    miles_skew = get_skewness(subset_all_cars_volkswagen$miles)
+  )
+  
+  results_volkswagen[[length(results_volkswagen) + 1]] <- result_row
+}
+
+# Combine all rows into a new data frame
+all_cars_volkswagen_sub <- do.call(rbind, results_volkswagen)
+
+# View the result
+print(all_cars_volkswagen_sub)
+
+# Define the suffixes
+fractions_volkswagen <- c(0.00, 0.25, 0.50, 0.75)
+
+# Repeat each row 4 times
+all_cars_volkswagen_sub_2 <- all_cars_volkswagen_sub[rep(1:nrow(all_cars_volkswagen_sub), each = 4), ]
+
+# Reset row names
+rownames(all_cars_volkswagen_sub_2) <- NULL
+
+# Get original years
+original_years_volkswagen <- all_cars_volkswagen_sub$year
+
+# Create the new year values
+new_years_volkswagen <- as.numeric(rep(original_years_volkswagen, each = 4)) + rep(fractions_volkswagen, times = length(original_years_volkswagen))
+
+# Assign to the data frame
+all_cars_volkswagen_sub_2$year <- new_years_volkswagen
+
+# View result
+print(all_cars_volkswagen_sub_2)
+
+
+
+```
+# Prepare for ARIMA
+
+```{r}
+# Convert to year and fraction
+year_int_volkswagen <- floor(all_cars_volkswagen_sub_2$year)
+fraction_volkswagen <- all_cars_volkswagen_sub_2$year - year_int_volkswagen
+
+# Round and convert fraction to character format with 2 decimal places
+fraction_rounded_volkswagen <- sprintf("%.2f", round(fraction_volkswagen, 2))
+
+# Lookup table
+month_lookup_volkswagen <- c(
+  `0.00` = "02",  # Feb
+  `0.25` = "05",  # May
+  `0.50` = "08",  # Aug
+  `0.75` = "11"   # Nov
+)
+
+# Get the month using lookup
+month_volkswagen <- month_lookup_volkswagen[fraction_rounded_volkswagen]
+
+# Create the full date string
+date_strings_volkswagen <- paste(year_int_volkswagen, month_volkswagen, "01", sep = "-")
+
+# Assign to new data frame and convert
+all_cars_volkswagen_sub_3 <- all_cars_volkswagen_sub_2
+all_cars_volkswagen_sub_3$year_date <- as.Date(date_strings_volkswagen, format = "%Y-%m-%d")
+
+names(all_cars_volkswagen_sub_3)[names(all_cars_volkswagen_sub_3) == "year_date"] <- "date"
+
+# Preview result
+head(all_cars_volkswagen_sub_3)
+
+
+```
+
+
+# volkswagen median time series
+```{r}
+# Extract median data from sub_3
+volkswagen_median <- data.frame(
+  date = all_cars_volkswagen_sub_3$date,
+  car_price_median = all_cars_volkswagen_sub_3$car_price_median
+)
+
+# ENABLE THIS TO REMOVE THE QUARTERLY DATA
+# volkswagen_median <- volkswagen_median[format(volkswagen_median$date, "%m-%d") == "02-01", ]
+
+# Rename the price field
+names(volkswagen_median)[names(volkswagen_median) == "car_price_median"] <- "median"
+
+# Convert object into time series object
+volkswagen_ts <- ts(volkswagen_median$median, start = c(2009, 1), frequency = 4)
+
+```
+
+
+## We can now have a look at the median price series
+```{r}
+autoplot(volkswagen_ts) +
+  ggtitle("Volkswagen Passat R-Line median sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025") +
+  xlab("Year of registration") +
+  ylab("Median sale price") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  theme(panel.grid.major = element_line(color = "gray", size = 0.5, linetype = 2))  
+  
+
+
+
+# Create an interactive plot using ts_plot()
+plot_2_volkswagen <- 
+ts_plot(volkswagen_ts,
+        slider = FALSE,
+        title = "Volkswagen Passat R-Line median sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025",
+        Xtitle = "Median sale price",
+        Ytitle = "% skew",
+        Xgrid = TRUE,    
+        Ygrid = TRUE) 
+
+# Display the interactive plot
+plot_2_volkswagen
+
+#https://otexts.com/fpp2/stationarity.html
+
+```
+
+
+# SARIMA(1,0,0)(2,1,0)[4] is the best suited model, so we use it
+```{r}
+volkswagen_ts %>% diff(lag=4) %>% ggtsdisplay()
+
+auto.arima(volkswagen_ts)
+
+mode_sarima_volkswagen <- volkswagen_ts %>%
+forecast::Arima(order=c(1,0,0), seasonal = c(2,1,0))
+
+mode_forecast_volkswagen <- mode_sarima_volkswagen %>% 
+forecast::forecast(h = 28)
+
+mode_forecast_volkswagen$mean
+
+```
+
+# Check Residual data
+```{r}
+checkresiduals(mode_sarima_volkswagen)
+```
+
+
+# Produce a LOESS of fitted-residual correlation
+```{r}
+ggplot(cbind(Fitted = fitted(mode_sarima_volkswagen),
+             Residuals = residuals(mode_sarima_volkswagen)) %>%
+         as.data.frame(),
+       aes(x = Fitted, y = Residuals)) +
+  geom_point() +
+  geom_smooth(method = "loess", color = "red", se = FALSE)
+```
+
+
+# Get the data table of historical and forecasted CPI (for later use), and produce a plot
+```{r}
+
+# Assuming uncertainty and uncertainty_forecast$mean are ts or zoo objects
+combined_data_volkswagen <- data.frame(Date = c(time(volkswagen_ts), time(mode_forecast_volkswagen$mean)),
+  Value = c(as.vector(volkswagen_ts), as.vector(mode_forecast_volkswagen$mean)),
+  Series = rep(c("Mode", "Forecast"), c(length(volkswagen_ts), length(mode_forecast_volkswagen$mean))))
+
+# Plot the combined time series
+ggplot(combined_data_volkswagen, aes(x = Date, y = Value, color = Series)) + geom_line(size = 0.9) +
+  labs(title = "Mode vs Forecast", x = "Year", y = "Sale price") + 
+  scale_color_manual(values = c("Mode" = "black", "Forecast" = "cyan"))
+  theme_minimal()
+
+
+
+```
+
+
+# ####################################################################
+
+# volkswagen SD time series
+```{r}
+# Extract median data from sub_3
+volkswagen_sd <- data.frame(
+  date = all_cars_volkswagen_sub_3$date,
+  car_price_sd = all_cars_volkswagen_sub_3$car_price_sd
+)
+
+# ENABLE THIS TO REMOVE THE QUARTERLY DATA
+# audi_median <- Volkswagen_median[format(Volkswagen_median$date, "%m-%d") == "02-01", ]
+
+# Rename the price field
+names(volkswagen_sd)[names(volkswagen_sd) == "car_price_sd"] <- "sd"
+
+# Convert object into time series object
+volkswagen_ts_sd <- ts(volkswagen_sd$sd, start = c(2009, 1), frequency = 4)
+
+```
+
+
+## We can now have a look at the sd price series
+```{r}
+autoplot(volkswagen_ts_sd) +
+  ggtitle("Volkswagen Passat R-Line sd sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025") +
+  xlab("Year of registration") +
+  ylab("sd sale price") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  theme(panel.grid.major = element_line(color = "gray", size = 0.5, linetype = 2))  
+  
+
+
+
+# Create an interactive plot using ts_plot()
+plot_2_sd_volkswagen <- 
+ts_plot(volkswagen_ts_sd,
+        slider = FALSE,
+        title = "Volkswagen Passat R-Line sd sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025",
+        Xtitle = "sd sale price",
+        Ytitle = "% sd",
+        Xgrid = TRUE,    
+        Ygrid = TRUE) 
+
+# Display the interactive plot
+plot_2_sd_volkswagen
+
+#https://otexts.com/fpp2/stationarity.html
+
+```
+
+
+# Find the ARIMA order automatically
+```{r}
+volkswagen_ts_sd %>% diff(lag=4) %>% ggtsdisplay()
+
+auto.arima(volkswagen_ts_sd)
+
+sd_sarima_volkswagen <- volkswagen_ts_sd %>%
+forecast::Arima(order=c(1,0,0), seasonal = c(2,0,0))
+
+sd_forecast_volkswagen <- sd_sarima_volkswagen %>% 
+forecast::forecast(h = 28)
+
+sd_forecast_volkswagen$mean
+
+```
+# We find ARIMA(1,0,0)(2,0,0)[4] to be suggested, so we use it.
+# Check Residual data
+```{r}
+checkresiduals(sd_sarima_volkswagen)
+```
+
+
+# Produce a LOESS of fitted-residual correlation
+```{r}
+ggplot(cbind(Fitted = fitted(sd_sarima_volkswagen),
+             Residuals = residuals(sd_sarima_volkswagen)) %>%
+         as.data.frame(),
+       aes(x = Fitted, y = Residuals)) +
+  geom_point() +
+  geom_smooth(method = "loess", color = "red", se = FALSE)
+```
+
+
+# Get the data table of historical and forecasted SD (for later use), and produce a plot
+```{r}
+
+# Assuming uncertainty and uncertainty_forecast$mean are ts or zoo objects
+combined_data_sd_volkswagen <- data.frame(Date = c(time(volkswagen_ts_sd), time(sd_forecast_volkswagen$mean)),
+  Value = c(as.vector(volkswagen_ts_sd), as.vector(sd_forecast_volkswagen$mean)),
+  Series = rep(c("sd", "Forecast"), c(length(volkswagen_ts_sd), length(sd_forecast_volkswagen$mean))))
+
+# Plot the combined time series
+ggplot(combined_data_sd_volkswagen, aes(x = Date, y = Value, color = Series)) + geom_line(size = 0.9) +
+  labs(title = "SD vs Forecast", x = "Year", y = "Sale price") + 
+  scale_color_manual(values = c("SD" = "black", "Forecast" = "cyan"))
+  theme_minimal()
+
+
+
+```
+
+
+
+# ####################################################################
+
+# volkswagen Skew time series
+```{r}
+# Extract median data from sub_3
+volkswagen_skew <- data.frame(
+  date = all_cars_volkswagen_sub_3$date,
+  car_price_skew = all_cars_volkswagen_sub_3$car_price_skew
+)
+
+# ENABLE THIS TO REMOVE THE QUARTERLY DATA
+# volkswagen_median <- volkswagen_median[format(volkswagen_median$date, "%m-%d") == "02-01", ]
+
+# Rename the price field
+names(volkswagen_skew)[names(volkswagen_skew) == "car_price_skew"] <- "skew"
+
+# Convert object into time series object
+volkswagen_ts_skew <- ts(volkswagen_skew$skew, start = c(2009, 1), frequency = 4)
+
+```
+
+
+## We can now have a look at the skew price series
+```{r}
+autoplot(volkswagen_ts_skew) +
+  ggtitle("Volkswagen Passat R-Line skew sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025") +
+  xlab("Year of registration") +
+  ylab("skew sale price") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  theme(panel.grid.major = element_line(color = "gray", size = 0.5, linetype = 2))  
+  
+
+
+
+# Create an interactive plot using ts_plot()
+plot_2_skew_volkswagen <- 
+ts_plot(volkswagen_ts_skew,
+        slider = FALSE,
+        title = "Volkswagen Passat R-Line skew sale price, from a major retailer, by year of registration. \n Data Source: Kaggle, 2025",
+        Xtitle = "skew sale price",
+        Ytitle = "% skew",
+        Xgrid = TRUE,    
+        Ygrid = TRUE) 
+
+# Display the interactive plot
+plot_2_skew_volkswagen
+
+#https://otexts.com/fpp2/stationarity.html
+
+```
+
+# We now find the ARIMA order automatically
+```{r}
+volkswagen_ts_skew %>% ggtsdisplay()
+
+auto.arima(volkswagen_ts_skew)
+
+skew_sarima_volkswagen <- volkswagen_ts_skew %>%
+forecast::Arima(order=c(1,0,0), seasonal = c(1,0,0))
+
+skew_forecast_volkswagen <- skew_sarima_volkswagen %>% 
+forecast::forecast(h = 28)
+
+skew_forecast_volkswagen$mean
+
+```
+# We find that SARIMA(1,0,0)(1,0,0)[4] is the best suited model, so we use it
+
+# Check Residual data
+```{r}
+checkresiduals(skew_sarima_volkswagen)
+```
+
+
+# Produce a LOESS of fitted-residual correlation
+```{r}
+ggplot(cbind(Fitted = fitted(skew_sarima_volkswagen),
+             Residuals = residuals(skew_sarima_volkswagen)) %>%
+         as.data.frame(),
+       aes(x = Fitted, y = Residuals)) +
+  geom_point() +
+  geom_smooth(method = "loess", color = "red", se = FALSE)
+```
+
+
+# Get the data table of historical and forecasted skew (for later use), and produce a plot
+```{r}
+
+# Assuming uncertainty and uncertainty_forecast$mean are ts or zoo objects
+combined_data_skew_volkswagen <- data.frame(Date = c(time(volkswagen_ts_skew), time(skew_forecast_volkswagen$mean)),
+  Value = c(as.vector(volkswagen_ts_skew), as.vector(skew_forecast_volkswagen$mean)),
+  Series = rep(c("skew", "Forecast"), c(length(volkswagen_ts_skew), length(skew_forecast_volkswagen$mean))))
+
+# Plot the combined time series
+ggplot(combined_data_skew_volkswagen, aes(x = Date, y = Value, color = Series)) + geom_line(size = 0.9) + labs(title = "Skew vs Forecast", x = "Year", y = "Sale price") + 
+  scale_color_manual(values = c("Skew" = "black", "Forecast" = "cyan"))
+  theme_minimal()
+
+
+
+```
+
+
+# Convert to .csv for downloading
+
+```{r}
+# Convert to csv for Excel formatting
+
+write.table(combined_data_volkswagen, "C:/Users/estro/Desktop/CAAS/volkswagen_mode_forecast.csv", sep = ",", row.names = FALSE)
+
+write.table(combined_data_sd_volkswagen, "C:/Users/estro/Desktop/CAAS/volkswagen_sd_forecast.csv", sep = ",", row.names = FALSE)
+
+write.table(combined_data_skew_volkswagen, "C:/Users/estro/Desktop/CAAS/volkswagen_skew_forecast.csv", sep = ",", row.names = FALSE)
+
+```
+
+# Now we go to Excel and combine the three .csv files we exported, and import them through 'Volkswagen0'.
+# Note that, values beyond 2023 are forecasts, as the original data set only contains entries for this type of car up to 2020.
+```{r}
+# Load Volkswagen combined parameter data
+
+volkswagen0 <- read.csv("volkswagen_parameters_combined.csv") %>% 
+  mutate(skew = ifelse(skew < -1, -0.99,
+                ifelse(skew > 1, 0.99, skew))) %>%
+  mutate(uncertainty = ifelse(is.na(uncertainty), 0, uncertainty)) %>%
+  drop_na()
+
+```
+
+
+
+# To plot our final, ARIMA forecast values
+```{r}
+
+# Select year of interest
+y0_volkswagen <- 2010
+k_volkswagen <- nrow(volkswagen0)
+
+# Percentiles to plot
+p_volkswagen <- c(0.01, seq(0.05, 0.95, 0.05), 0.99)
+
+# Generate fan values from split-normal
+cpival_volkswagen <- matrix(NA, nrow = length(p_volkswagen), ncol = k_volkswagen)
+for (i in 1:k_volkswagen) {
+  cpival_volkswagen[, i] <- qsplitnorm(
+    p_volkswagen,
+    mode = volkswagen0$mode[i],
+    sd = volkswagen0$uncertainty[i],
+    skew = volkswagen0$skew[i]
+  )
+}
+
+# Set plot margins
+par(mar = c(6, 6, 6, 2))  # bottom, left, top, right
+
+# Generate x-axis range
+years_seq_volkswagen <- seq(y0_volkswagen, by = 0.25, length.out = ncol(cpival_volkswagen))
+cutoff_index_volkswagen <- which(years_seq_volkswagen >= 2020.00)[1]
+
+# Split the matrix
+cpival_before_volkswagen <- cpival_volkswagen[, 1:(cutoff_index_volkswagen - 1)]
+cpival_after_volkswagen  <- cpival_volkswagen[, cutoff_index_volkswagen:ncol(cpival_volkswagen)]
+
+# initialise the plot
+plot(1, type = "n", xlim = c(y0_volkswagen, y0_volkswagen + k_volkswagen/4), ylim = c(0, max(cpival_volkswagen, na.rm = TRUE)),
+     xaxt = "n", yaxt = "n", ylab = "", xlab = "")
+
+# Light gray background
+rect(y0_volkswagen - 0.25, par("usr")[3], y0_volkswagen + k_volkswagen/4, par("usr")[4], border = NA, col = "white")
+
+# Add grid lines (light gray for all quarters)
+abline(v = seq(y0_volkswagen, y0_volkswagen + k_volkswagen/4, 0.25), col = "lightgray", lty = 1, lwd = 0.5)
+
+# Thicker grid lines for full years
+abline(v = seq(y0_volkswagen, y0_volkswagen + k_volkswagen/4, 1), col = "black", lty = 1, lwd = 0.8)
+
+# Horizontal grid lines
+abline(h = seq(0, 50000, by = 5000), col = "gray", lty = 1, lwd = 0.5)
+abline(h = seq(0, 50000, by = 1000), col = "gray80", lty = 2, lwd = 0.3)
+
+# Fan plot before 
+fan(data = cpival_before_volkswagen, data.type = "values", probs = p_volkswagen,
+    start = y0_volkswagen, frequency = 4,
+    fan.col = colorRampPalette(c("green4", "azure2")),
+    ln = NULL, rlab = NULL)
+
+# Fan plot from after
+fan(data = cpival_after_volkswagen, data.type = "values", probs = p_volkswagen,
+    start = years_seq_volkswagen[cutoff_index_volkswagen], frequency = 4,
+    fan.col = colorRampPalette(c("tomato", "azure2")),
+    ln = NULL, rlab = NULL)
+
+# Y-axis
+axis(2, las = 2, tcl = 0.5)
+
+# X-axis: label every full year, rotated
+year_ticks_volkswagen <- seq(y0_volkswagen, y0_volkswagen + k_volkswagen/4, 1)
+axis(1, at = year_ticks_volkswagen, labels = format(year_ticks_volkswagen, nsmall = 2), las = 2, cex.axis = 0.8)
+
+# Titles
+title(main = "Sale Price Distribution by Registration Date, for \n a major retailer, plus SARIMA forecast, 2020-26 \n Car: Volkswagen Passat R-Line", line = 2.7, font.main = 2, cex.main = 1.2)
+title(xlab = "Registration Date", line = 3.8, cex.lab = 1)
+title(ylab = "Sale Price (£)", line = 4.5, cex.lab = 1)  # Shifted left using line=
+
+# Calculate "years since 2025"
+years_since_2025_volkswagen <- 2025 - year_ticks_volkswagen
+
+# Add the top axis (side = 3) with custom labels
+axis(3, at = year_ticks_volkswagen, labels = years_since_2025_volkswagen, tcl = 0.5, cex.axis = 0.8)
+
+# Add axis label above top axis
+mtext("Age (as of 2025)", side = 3, line = 2.5, cex = 0.8, adj = 1)
+
+legend_x_volkswagen <- y0_volkswagen + k_volkswagen/4 - 17    # adjust position on x-axis (near right)
+legend_y_volkswagen <- max(cpival_volkswagen, na.rm = TRUE)  # near top of y-axis
+
+legend(
+  x = legend_x_volkswagen, y = legend_y_volkswagen,
+  legend = c("Historical", "Forecast"),
+  fill = c("green4", "tomato"),
+  border = "black",
+  bty = "n",          # no box around legend
+  cex = 0.9,          # text size
+  inset = 0.02        # a little inset from the edge
+)
+
+
+```
+
+
+# Extract Audi specific model estimates' tables
+
+```{r}
+
+# Step 1: Convert matrix to data frame
+audi_estimate_ranges <- as.data.frame(cpival)
+
+# Step 2: Remove duplicate columns
+audi_estimate_ranges <- audi_estimate_ranges[, !duplicated(as.data.frame(t(audi_estimate_ranges)))]
+
+# Step 3: Keep only the 1st, 11th, and 21st rows
+audi_estimate_ranges <- audi_estimate_ranges[c(1, 11, 21), ]
+
+# now
+
+# Number of full years: 2007 to 2022 = 16
+full_years_audi <- as.character(2007:2022)
+
+# Number of quarters: From 2023.00 to 2026.75 = 4 years × 4 quarters = 16 quarters
+quarter_years_audi <- format(seq(2023, 2026.75, by = 0.25), nsmall = 2)
+
+# Combine both
+new_colnames_audi <- c(full_years_audi, quarter_years_audi)
+
+# Check length matches number of columns
+if (length(new_colnames_audi) != ncol(audi_estimate_ranges)) {
+  stop("no column match")
+}
+
+# Assign new column names
+colnames(audi_estimate_ranges) <- new_colnames_audi
+
+rownames(audi_estimate_ranges) <- c("lower_bound", "median", "upper_bound")
+
+```
+
+# Extract Vauxhall specific model estimates' tables
+
+```{r}
+
+# Step 1: Convert matrix to data frame
+vauxhall_estimate_ranges <- as.data.frame(cpival_vauxhall)
+
+# Step 2: Remove duplicate columns
+vauxhall_estimate_ranges <- vauxhall_estimate_ranges[, !duplicated(as.data.frame(t(vauxhall_estimate_ranges)))]
+
+# Step 3: Keep only the 1st, 11th, and 21st rows
+vauxhall_estimate_ranges <- vauxhall_estimate_ranges[c(1, 11, 21), ]
+
+# now
+
+# Number of full years: 2007 to 2022 = 16
+full_years_vauxhall <- as.character(2009:2019)
+
+# Number of quarters: From 2023.00 to 2026.75 = 4 years × 4 quarters = 16 quarters
+quarter_years_vauxhall <- format(seq(2020, 2026.75, by = 0.25), nsmall = 2)
+
+# Combine both
+new_colnames_vauxhall <- c(full_years_vauxhall, quarter_years_vauxhall)
+
+# Check length matches number of columns
+if (length(new_colnames_vauxhall) != ncol(vauxhall_estimate_ranges)) {
+  stop("no column match")
+}
+
+# Assign new column names
+colnames(vauxhall_estimate_ranges) <- new_colnames_vauxhall
+
+rownames(vauxhall_estimate_ranges) <- c("lower_bound", "median", "upper_bound")
+
+```
+
+
+# Extract Volkswagen specific model estimates' tables
+
+```{r}
+
+# Step 1: Convert matrix to data frame
+volkswagen_estimate_ranges <- as.data.frame(cpival_volkswagen)
+
+# Step 2: Remove duplicate columns
+volkswagen_estimate_ranges <- volkswagen_estimate_ranges[, !duplicated(as.data.frame(t(volkswagen_estimate_ranges)))]
+
+# Step 3: Keep only the 1st, 11th, and 21st rows
+volkswagen_estimate_ranges <- volkswagen_estimate_ranges[c(1, 11, 21), ]
+
+# now
+
+full_years_volkswagen_1 <- as.character(2010:2010)
+
+full_years_volkswagen_2 <- as.character(2012:2019)
+
+# Number of quarters: From 2023.00 to 2026.75 = 4 years × 4 quarters = 16 quarters
+quarter_years_volkswagen <- format(seq(2020, 2026.75, by = 0.25), nsmall = 2)
+
+# Combine both
+new_colnames_volkswagen <- c(full_years_volkswagen_1, full_years_volkswagen_2, quarter_years_volkswagen)
+
+# Check length matches number of columns
+if (length(new_colnames_volkswagen) != ncol(volkswagen_estimate_ranges)) {
+  stop("no column match")
+}
+
+# Assign new column names
+colnames(volkswagen_estimate_ranges) <- new_colnames_volkswagen
+
+rownames(volkswagen_estimate_ranges) <- c("lower_bound", "median", "upper_bound")
+
+```

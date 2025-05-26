@@ -1,0 +1,25 @@
+Finance Type,C_i,B_i,M_i,O_i,E_i,x_i,,,,,,,,,,,,,,
+Personal Loan,11555.4,0,192.59,1,0,0,,,,Finance Type,APR (%),Deposit Needed,Monthly Payments,Term (Months),Total Payable,Own Car Straight Away,Own Car at End,Secured (Against Car),Excess Mileage Charges,Notes
+PCP,8500,4000,150,1,1,0,,,,Personal Loan,6,£0,£192.59,60,"£11,555.40",Yes,Yes,No,No,Unsecured loan; you own car from day one
+HP,12180,0,203,1,0,0,,,,PCP,6.9,"~£1,000 (10%)",£150.00,48,"£12,500 (with £4,000 balloon)",No,Optional,Yes,Yes,Optional balloon to buy; mileage limits apply
+PCH (Lease),8640,0,180,0,1,0,,,,HP,8,"~£1,000 (10%)",£203.00,60,"£12,180",No,Yes,Yes,No,"Simple structure, own car after final payment"
+0% Finance,10000,0,166.67,1,0,1,,,,PCH (Lease),N/A,"~£1,000 (initial rental)",£180.00,48,"£8,640 (rental)",No,No,Yes,Yes,"Long-term rental, must return car"
+Lease Purchase,8800,3200,170,1,0,0,,,,0% Finance,0,"£0–£2,000 (varies)",£166.67,60,"£10,000",No (until paid),Yes,Usually,No,Great deal if available; often for new cars
+Balloon HP,8800,3600,160,1,0,0,,,,Lease Purchase,7.5,"~£1,000 (10%)",£170.00,48,"£12,000 (with balloon)",No,Yes (after balloon),Yes,No,Similar to PCP but ownership expected
+Used Car Finance (HP),13200,0,220,1,0,0,,,,Balloon HP,7,"~£1,000 (10%)",£160.00,48,"£12,400 (with balloon)",No,Yes,Yes,No,HP with lower monthly + balloon
+,,,,,,,,,,Used Car Finance (HP),9.9,"~£1,000 (10%)",£220.00,60,"£13,200",No,Yes,Yes,No,Like HP but with higher APR for used cars
+,,,,,,,,,,,,,,,,,,,,
+Objective Function (Min Total Cost):,10000,Minimize,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,
+Constraint 1: Select exactly one option,1,=,1,,,,,,,,,,,,,,,,,
+Constraint 2: Monthly budget <=,166.67,<=,200,,,,,,,,,,,,,,,,,
+Constraint 3: Must own car at end (=1) (Optional),1,=,1,,,,,,,,,,,,,,,,,
+Constraint 4: No mileage penalties (<=0) (Optional),0,<=,0,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,
+Solver Setup Instructions:,,,,,,,,,,,,,,,,,,,,
+1. Set Objective: B14 to Min,,,,,,,,,,,,,,,,,,,,
+2. By Changing Variable Cells: G4:G11,,,,,,,,,,,,,,,,,,,,
+3. Add Constraints:,,"ALSO, let G4:G11 be binary as a constraint in Solver.",,,,,,,,,,,,,,,,,,
+"4. Select Solving Method: Simplex LP (or GRG Nonlinear if binary constraint causes issues, though Simplex usually handles binary fine if formulated as integer)",,,,,,,,,,,,,,,,,,,,
+"Ensure ""Make Unconstrained Variables Non-Negative"" is unchecked if allowing costs to be negative (not applicable here, but good practice).",,,,,,,,,,,,,,,,,,,,
+5. Click Solve.,,,,,,,,,,,,,,,,,,,,
