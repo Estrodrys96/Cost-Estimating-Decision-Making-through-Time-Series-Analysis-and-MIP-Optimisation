@@ -1,5 +1,5 @@
 ---
-title: "CAAS - Car Purchase Estimating"
+title: "Car Purchase Estimating"
 author: "Esteban Rodriguez"
 date: "2025-05-25"
 output: html_document
@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 
-#setwd("C:/Users/user/Desktop/CAAS")
+#setwd("C:/Users/user/Desktop/cpe")
 
 library(forecast)
 library(ggplot2)
@@ -41,7 +41,7 @@ library(triangle)
 
 # set work directory
 
-setwd("C:/Users/user/Desktop/CAAS")
+setwd("C:/Users/user/Desktop/cpe")
 
 # Load UK postcode lookup table
 
@@ -682,11 +682,11 @@ ggplot(combined_data_skew, aes(x = Date, y = Value, color = Series)) + geom_line
 ```{r}
 # Convert to csv for Excel formatting
 
-#write.table(combined_data, "C:/Users/user/Desktop/CAAS/audi_mode_forecast.csv", sep = ",", row.names = FALSE)
+#write.table(combined_data, "C:/Users/user/Desktop/cpe/audi_mode_forecast.csv", sep = ",", row.names = FALSE)
 
-#write.table(combined_data_sd, "C:/Users/user/Desktop/CAAS/audi_sd_forecast.csv", sep = ",", row.names = FALSE)
+#write.table(combined_data_sd, "C:/Users/user/Desktop/cpe/audi_sd_forecast.csv", sep = ",", row.names = FALSE)
 
-#write.table(combined_data_skew, "C:/Users/user/Desktop/CAAS/audi_skew_forecast.csv", sep = ",", row.names = FALSE)
+#write.table(combined_data_skew, "C:/Users/user/Desktop/cpe/audi_skew_forecast.csv", sep = ",", row.names = FALSE)
 
 ```
 
@@ -1276,11 +1276,11 @@ ggplot(combined_data_skew_vauxhall, aes(x = Date, y = Value, color = Series)) + 
 ```{r}
 # Convert to csv for Excel formatting
 
-#write.table(combined_data_vauxhall, "C:/Users/user/Desktop/CAAS/vauxhall_mode_forecast.csv", sep = ",", row.names = FALSE)
+#write.table(combined_data_vauxhall, "C:/Users/user/Desktop/cpe/vauxhall_mode_forecast.csv", sep = ",", row.names = FALSE)
 
-#write.table(combined_data_sd_vauxhall, "C:/Users/user/Desktop/CAAS/vauxhall_sd_forecast.csv", sep = ",", row.names = FALSE)
+#write.table(combined_data_sd_vauxhall, "C:/Users/user/Desktop/cpe/vauxhall_sd_forecast.csv", sep = ",", row.names = FALSE)
 
-#write.table(combined_data_skew_vauxhall, "C:/Users/user/Desktop/CAAS/vauxhall_skew_forecast.csv", sep = ",", row.names = FALSE)
+#write.table(combined_data_skew_vauxhall, "C:/Users/user/Desktop/cpe/vauxhall_skew_forecast.csv", sep = ",", row.names = FALSE)
 
 ```
 
@@ -1871,11 +1871,11 @@ ggplot(combined_data_skew_volkswagen, aes(x = Date, y = Value, color = Series)) 
 ```{r}
 # Convert to csv for Excel formatting
 
-#write.table(combined_data_volkswagen, "C:/Users/user/Desktop/CAAS/volkswagen_mode_forecast.csv", sep = ",", row.names = FALSE)
+#write.table(combined_data_volkswagen, "C:/Users/user/Desktop/cpe/volkswagen_mode_forecast.csv", sep = ",", row.names = FALSE)
 
-#write.table(combined_data_sd_volkswagen, "C:/Users/user/Desktop/CAAS/volkswagen_sd_forecast.csv", sep = ",", row.names = FALSE)
+#write.table(combined_data_sd_volkswagen, "C:/Users/user/Desktop/cpe/volkswagen_sd_forecast.csv", sep = ",", row.names = FALSE)
 
-#write.table(combined_data_skew_volkswagen, "C:/Users/user/Desktop/CAAS/volkswagen_skew_forecast.csv", sep = ",", row.names = FALSE)
+#write.table(combined_data_skew_volkswagen, "C:/Users/user/Desktop/cpe/volkswagen_skew_forecast.csv", sep = ",", row.names = FALSE)
 
 ```
 
